@@ -34,17 +34,23 @@ impl Entry {
         self.path = Some(path);
     }
 
-    pub async fn get_bib(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn get_bib(&mut self) -> Result<(), Box<dyn Error>> {
         let bib = utils::doi2bib(&self.doi).await?;
-        self.bibtex = bib;
-        self.parse_bibtex();
+        self.parse_bibtex(bib)?;
         Ok(())
     }
 
-    fn parse_bibtex(&mut self) {
-        let bib = Bibliography::parse(&self.bibtex).unwrap();
-        let entry = bib.iter().next().unwrap();
-        self.title = entry.title().unwrap().format_sentence();
+    fn parse_bibtex(&mut self, bib: String) -> Result<(), String> {
+        let bibs = Bibliography::parse(&bib).unwrap(); // only one entry
+        match bibs.iter().next() {
+            Some(entry) => {
+                // TODO: update entry cite name
+                self.title = entry.title().unwrap().format_sentence();
+                self.bibtex = bib;
+                Ok(())
+            }
+            None => Err(String::from("Invalid DOI")),
+        }
     }
 
     pub fn take_note(&mut self, note: &str) {
@@ -90,12 +96,9 @@ impl Library {
         let rt = Runtime::new().unwrap();
         // TODO: get multiple entries from DOIs together
         match rt.block_on(new_entry.get_bib()) {
-            Ok(()) => {}
-            Err(_) => {
-                println!("Failed to get bibtex")
-            }
+            Ok(()) => self.entries.push(new_entry),
+            Err(e) => println!("Failed to add entry, error: {}", e),
         };
-        self.entries.push(new_entry);
     }
 
     pub fn del(&mut self, id: usize) {

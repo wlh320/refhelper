@@ -14,6 +14,7 @@ const CLI_CLAP_SETTINGS: &[AppSettings] = &[
     AppSettings::DisableVersion,
     AppSettings::DisableHelpFlags,
     AppSettings::VersionlessSubcommands,
+    AppSettings::DeriveDisplayOrder,
 ];
 
 #[derive(StructOpt, Debug)]
@@ -33,12 +34,12 @@ pub enum Command {
     #[structopt(settings(CLI_CLAP_SETTINGS))]
     List,
 
-    /// Add an Entry to this library
+    /// Add an Entry to current library
     #[structopt(name = "add")]
     #[structopt(settings(CLI_CLAP_SETTINGS))]
     Add { name: String, doi: String },
 
-    /// Delete an Entry in this library
+    /// Delete an Entry in current library
     #[structopt(name = "del", alias = "rm")]
     #[structopt(settings(CLI_CLAP_SETTINGS))]
     Del { id: usize },

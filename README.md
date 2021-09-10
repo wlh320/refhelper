@@ -12,7 +12,6 @@ work in process.
 
 `Library` - A collection of entries, can be exported to `.bibtex` file
 
-
 ```
 refhelper 0.1.0
 A CLI tool to manage paper references
@@ -39,13 +38,13 @@ USAGE:
     Type command in an interactive shell
 
 SUBCOMMANDS:
-    add     Add an Entry to this library
-    del     Delete an Entry in this library
-    gen     Generate bibtex file of current library
-    help    Prints this message or the help of the given subcommand(s)
-    link    Create Link from entry and pdf file
-    list    List entries of current library
     open    Open a library
-    quit    Quit from interactive CLI
+    list    List entries of current library
+    add     Add an Entry to current library
+    del     Delete an Entry in current library
+    link    Create Link from entry and pdf file
     view    View chosen pdf file in pdfviewer
+    gen     Generate bibtex file of current library
+    quit    Quit from interactive CLI
+    help    Prints this message or the help of the given subcommand(s)
 ```
