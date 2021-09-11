@@ -1,5 +1,6 @@
 use biblatex::{self, Bibliography, ChunksExt};
-use prettytable::{cell, row, Table};
+use futures::{stream, StreamExt};
+use comfy_table::{Table, ContentArrangement};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::process::{self, Stdio};
@@ -8,6 +9,8 @@ use tokio::runtime::Runtime;
 
 pub mod cli;
 mod utils;
+mod rustyline;
+
 #[derive(Serialize, Deserialize)]
 pub struct Entry {
     name: String,
@@ -41,12 +44,13 @@ impl Entry {
     }
 
     fn parse_bibtex(&mut self, bib: String) -> Result<(), String> {
-        let bibs = Bibliography::parse(&bib).unwrap(); // only one entry
-        match bibs.iter().next() {
+        let mut bibs = Bibliography::parse(&bib).unwrap(); // only one entry
+        match bibs.iter_mut().next() {
             Some(entry) => {
-                // TODO: update entry cite name
+                // update entry cite key to entry.name
+                entry.key = self.name.clone();
                 self.title = entry.title().unwrap().format_sentence();
-                self.bibtex = bib;
+                self.bibtex = entry.to_bibtex_string();
                 Ok(())
             }
             None => Err(String::from("Invalid DOI")),
@@ -94,11 +98,31 @@ impl Library {
     pub fn add(&mut self, name: &str, doi: &str) {
         let mut new_entry = Entry::new(name, doi);
         let rt = Runtime::new().unwrap();
-        // TODO: get multiple entries from DOIs together
         match rt.block_on(new_entry.get_bib()) {
             Ok(()) => self.entries.push(new_entry),
             Err(e) => println!("Failed to add entry, error: {}", e),
         };
+    }
+
+    pub fn add_batch(&mut self, mut entries: Vec<Entry>) {
+        const CONCURRENT_NUM: usize = 5;
+        let rt = Runtime::new().unwrap();
+        let results = rt.block_on(async {
+            let tasks = entries.iter_mut().map(|e| e.get_bib());
+            stream::iter(tasks)
+                .map(|task| async { task.await })
+                .buffered(CONCURRENT_NUM)
+                .collect::<Vec<_>>()
+                .await
+        });
+        let old_len = self.entries.len();
+        for (entry, result) in entries.into_iter().zip(results.into_iter()) {
+            match result {
+                Ok(()) => self.entries.push(entry),
+                Err(e) => println!("{} error: {}", entry.name, e),
+            }
+        }
+        println!("Read {} entries from file", self.entries.len() - old_len);
     }
 
     pub fn del(&mut self, id: usize) {
@@ -110,6 +134,7 @@ impl Library {
     }
 
     pub fn link(&mut self, id: usize, path: PathBuf) {
+        // TODO: download pdf automaticlly
         match self.entries.get_mut(id) {
             None => println!("No such id"),
             Some(e) => e.link(path),
@@ -138,21 +163,24 @@ impl Library {
             println!("Current library: {}", p.display());
         };
         let mut table = Table::new();
-        table.add_row(row!["id", "name", "title", "doi", "path"]);
+        table.set_content_arrangement(ContentArrangement::Dynamic);
+        table.set_header(vec!["id", "name", "title", "doi", "path"]);
         for (id, entry) in self.entries.iter().enumerate() {
-            table.add_row(row![
-                id,
-                entry.name,
-                entry.title,
-                entry.doi,
-                match entry.path {
-                    Some(_) => "y",
-                    None => "n",
+            table.add_row(vec![
+                &id.to_string(),
+                &entry.name,
+                &entry.title,
+                &entry.doi,
+                &match entry.path {
+                    Some(_) => "y".to_string(),
+                    None => "n".to_string(),
                 }
             ]);
         }
-        table.printstd();
+        println!("{}", table);
     }
+
+    // TODO: fuzzy search from library
 
     pub fn save(&self) -> Result<(), Box<dyn Error>> {
         if let Some(p) = &self.path {
@@ -165,5 +193,11 @@ impl Library {
         for entry in self.entries.iter() {
             println!("{}", entry.bibtex);
         }
+    }
+
+    pub fn load_bibtex(&mut self, entries: Vec<Entry>) {
+        let len = entries.len();
+        self.entries.extend(entries.into_iter());
+        println!("load {} entries from file", len);
     }
 }

@@ -1,12 +1,12 @@
 use clap::AppSettings;
-use rustyline::error::ReadlineError;
-use rustyline::Editor;
 use std::env;
 use std::error::Error;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
+use crate::utils;
 use crate::Library;
+use crate::rustyline;
 
 const CLI_CLAP_SETTINGS: &[AppSettings] = &[
     AppSettings::NoBinaryName,
@@ -34,17 +34,33 @@ pub enum Command {
     #[structopt(settings(CLI_CLAP_SETTINGS))]
     List,
 
-    /// Add an Entry to current library
+    /// Add an entry to current library
     #[structopt(name = "add")]
     #[structopt(settings(CLI_CLAP_SETTINGS))]
     Add { name: String, doi: String },
 
-    /// Delete an Entry in current library
+    /// Add a batch of entries to current library (from a txt file)
+    #[structopt(name = "add_batch")]
+    #[structopt(settings(CLI_CLAP_SETTINGS))]
+    AddBatch {
+        #[structopt(parse(from_os_str))]
+        path: PathBuf,
+    },
+
+    /// Load a batch of entries to current library (from a bibtex file)
+    #[structopt(name = "load")]
+    #[structopt(settings(CLI_CLAP_SETTINGS))]
+    Load {
+        #[structopt(parse(from_os_str))]
+        path: PathBuf,
+    },
+
+    /// Delete an entry in current library
     #[structopt(name = "del", alias = "rm")]
     #[structopt(settings(CLI_CLAP_SETTINGS))]
     Del { id: usize },
 
-    /// Create Link from entry and pdf file
+    /// Create link from entry to a pdf file
     #[structopt(name = "link")]
     #[structopt(settings(CLI_CLAP_SETTINGS))]
     Link { id: usize, path: PathBuf },
@@ -76,30 +92,24 @@ pub fn loop_run(libpath: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
         Some(path) => Library::from_path(path)?,
         None => Library::new(),
     };
-    // TODO: rustyline completion
-    let mut rl = Editor::<()>::new();
+    let mut rl = rustyline::my_editor();
     let prompt = ">> ";
     loop {
         let readline = rl.readline(prompt);
         let line = match readline {
             Ok(line) if line.trim() == "" => continue,
             Ok(line) => line,
-            Err(ReadlineError::Interrupted) => break,
-            Err(ReadlineError::Eof) => break,
+            Err(rustyline::ReadlineError::Interrupted) => break,
+            Err(rustyline::ReadlineError::Eof) => break,
             Err(_) => String::from("help"),
         };
-        match Command::from_iter_safe(line.split(' ')) {
-            Ok(Command::Open { path }) => {
-                lib = Library::from_path(path)?;
-            }
+        match Command::from_iter_safe(line.split_whitespace()) {
+            Ok(Command::Open { path }) => lib = Library::from_path(path)?,
             Ok(Command::Quit) => break,
-            Ok(command) => {
-                execute_command(&mut lib, command);
-            }
-            Err(e) => {
-                println!("{}", e.message);
-            }
+            Ok(command) => execute_command(&mut lib, command),
+            Err(e) => println!("{}", e.message),
         };
+        rl.add_history_entry(line);
     }
     lib.save()?;
     Ok(())
@@ -113,6 +123,8 @@ fn execute_command(lib: &mut Library, command: Command) {
     match command {
         Command::List => lib.print(),
         Command::Add { name, doi } => lib.add(&name, &doi),
+        Command::AddBatch { path } => lib.add_batch(utils::read_doi_file(path)),
+        Command::Load {path} => lib.load_bibtex(utils::read_bibtex_file(path)),
         Command::Del { id } => lib.del(id),
         Command::Link { id, path } => lib.link(id, path),
         Command::View { id } => lib.view(id),
