@@ -17,3 +17,6 @@ rustyline-derive = "0.5.0"
 biblatex = "0.4.2"
 serde = { version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.67"
+
+# static compilation
+openssl = {version = "0.10", features = ["vendored"]}
