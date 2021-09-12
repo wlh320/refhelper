@@ -4,9 +4,9 @@ use std::error::Error;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
+use crate::rustyline;
 use crate::utils;
 use crate::Library;
-use crate::rustyline;
 
 const CLI_CLAP_SETTINGS: &[AppSettings] = &[
     AppSettings::NoBinaryName,
@@ -33,6 +33,15 @@ pub enum Command {
     #[structopt(name = "list", alias = "ls")]
     #[structopt(settings(CLI_CLAP_SETTINGS))]
     List,
+
+    /// Search entries with some pattern
+    #[structopt(name = "search", alias = "s")]
+    #[structopt(settings(CLI_CLAP_SETTINGS))]
+    Search {
+        pat: String,
+        #[structopt(short, long)]
+        fuzzy: bool,
+    },
 
     /// Add an entry to current library
     #[structopt(name = "add")]
@@ -70,10 +79,10 @@ pub enum Command {
     #[structopt(settings(CLI_CLAP_SETTINGS))]
     View { id: usize },
 
-    /// Generate bibtex file of current library
+    /// Generate bibtex file of one entry or entire library
     #[structopt(name = "gen")]
     #[structopt(settings(CLI_CLAP_SETTINGS))]
-    Gen,
+    Gen { id: Option<usize> },
 
     /// Quit from interactive CLI
     #[structopt(name = "quit", alias = "exit")]
@@ -103,7 +112,7 @@ pub fn loop_run(libpath: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
             Err(rustyline::ReadlineError::Eof) => break,
             Err(_) => String::from("help"),
         };
-        match Command::from_iter_safe(line.split_whitespace()) {
+        match Command::from_iter_safe(line.trim().split_whitespace()) {
             Ok(Command::Open { path }) => lib = Library::from_path(path)?,
             Ok(Command::Quit) => break,
             Ok(command) => execute_command(&mut lib, command),
@@ -122,13 +131,14 @@ fn execute_command(lib: &mut Library, command: Command) {
     }
     match command {
         Command::List => lib.print(),
+        Command::Search { pat, fuzzy } => lib.search(&pat, fuzzy),
         Command::Add { name, doi } => lib.add(&name, &doi),
         Command::AddBatch { path } => lib.add_batch(utils::read_doi_file(path)),
-        Command::Load {path} => lib.load_bibtex(utils::read_bibtex_file(path)),
+        Command::Load { path } => lib.load_bibtex(utils::read_bibtex_file(path)),
         Command::Del { id } => lib.del(id),
         Command::Link { id, path } => lib.link(id, path),
         Command::View { id } => lib.view(id),
-        Command::Gen => lib.gen_bibtex(),
+        Command::Gen { id } => lib.gen_bibtex(id),
         _ => {}
     };
 }

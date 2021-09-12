@@ -1,15 +1,15 @@
 use biblatex::{self, Bibliography, ChunksExt};
 use futures::{stream, StreamExt};
-use comfy_table::{Table, ContentArrangement};
+use fuzzy_matcher::skim::SkimMatcherV2;
 use serde::{Deserialize, Serialize};
+use std::error::Error;
 use std::fs::File;
-use std::process::{self, Stdio};
-use std::{error::Error, path::PathBuf};
+use std::path::PathBuf;
 use tokio::runtime::Runtime;
 
 pub mod cli;
-mod utils;
 mod rustyline;
+mod utils;
 
 #[derive(Serialize, Deserialize)]
 pub struct Entry {
@@ -44,13 +44,14 @@ impl Entry {
     }
 
     fn parse_bibtex(&mut self, bib: String) -> Result<(), String> {
-        let mut bibs = Bibliography::parse(&bib).unwrap(); // only one entry
+        let mut bibs = Bibliography::parse(&bib).unwrap();
+        // only one entry
         match bibs.iter_mut().next() {
-            Some(entry) => {
+            Some(e) => {
                 // update entry cite key to entry.name
-                entry.key = self.name.clone();
-                self.title = entry.title().unwrap().format_sentence();
-                self.bibtex = entry.to_bibtex_string();
+                e.key = self.name.clone();
+                self.title = e.title().map_or("".to_owned(), |t| t.format_sentence());
+                self.bibtex = e.to_bibtex_string();
                 Ok(())
             }
             None => Err(String::from("Invalid DOI")),
@@ -68,8 +69,10 @@ impl Entry {
 
 #[derive(Serialize, Deserialize)]
 pub struct Library {
-    path: Option<PathBuf>,
     entries: Vec<Entry>,
+
+    #[serde(skip)]
+    path: Option<PathBuf>,
 }
 
 impl Library {
@@ -82,7 +85,11 @@ impl Library {
 
     pub fn from_path(path: PathBuf) -> Result<Library, Box<dyn Error>> {
         let lib = match File::open(&path) {
-            Ok(file) => serde_json::from_reader(file)?,
+            Ok(file) => {
+                let mut exist_lib: Library = serde_json::from_reader(file)?;
+                exist_lib.path = Some(path);
+                exist_lib
+            }
             Err(_) => {
                 File::create(&path)?;
                 Library {
@@ -91,7 +98,6 @@ impl Library {
                 }
             }
         };
-        println!("Open library {}", &lib.path.as_ref().unwrap().display());
         Ok(lib)
     }
 
@@ -147,12 +153,9 @@ impl Library {
             Some(entry) => match &entry.path {
                 None => println!("No pdf file of this entry"),
                 Some(p) => {
-                    // TODO: cross-platform
-                    process::Command::new("xdg-open")
-                        .arg(p.as_os_str())
-                        .stdout(Stdio::null())
-                        .spawn()
-                        .expect("Failed to open pdf file");
+                    if let Err(e) = utils::view_pdf_file(p) {
+                        println!("View pdf file failed, error {}", e);
+                    }
                 }
             },
         };
@@ -162,25 +165,31 @@ impl Library {
         if let Some(p) = &self.path {
             println!("Current library: {}", p.display());
         };
-        let mut table = Table::new();
-        table.set_content_arrangement(ContentArrangement::Dynamic);
-        table.set_header(vec!["id", "name", "title", "doi", "path"]);
-        for (id, entry) in self.entries.iter().enumerate() {
-            table.add_row(vec![
-                &id.to_string(),
-                &entry.name,
-                &entry.title,
-                &entry.doi,
-                &match entry.path {
-                    Some(_) => "y".to_string(),
-                    None => "n".to_string(),
-                }
-            ]);
-        }
-        println!("{}", table);
+        utils::print_entries(&mut self.entries.iter().enumerate());
     }
 
-    // TODO: fuzzy search from library
+    pub fn search(&self, pat: &str, fuzzy: bool) {
+        if let Some(p) = &self.path {
+            println!("Current library: {}", p.display());
+        };
+        let matcher: Box<dyn utils::Matcher> = if fuzzy {
+            Box::new(SkimMatcherV2::default())
+        } else {
+            Box::new(utils::StrictMatcher)
+        };
+        let mut matched = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter_map(|(id, e)| match matcher.score(&e.bibtex, pat) {
+                None => None,
+                Some(s) => Some((s, id, e)),
+            })
+            .collect::<Vec<_>>();
+        matched.sort_by_key(|t| -t.0);
+        let mut to_print = matched.into_iter().map(|(_, i, e)| (i, e));
+        utils::print_entries(&mut to_print);
+    }
 
     pub fn save(&self) -> Result<(), Box<dyn Error>> {
         if let Some(p) = &self.path {
@@ -189,9 +198,19 @@ impl Library {
         Ok(())
     }
 
-    pub fn gen_bibtex(&self) {
-        for entry in self.entries.iter() {
-            println!("{}", entry.bibtex);
+    pub fn gen_bibtex(&self, id: Option<usize>) {
+        match id {
+            None => {
+                // gen all bibtex
+                for entry in self.entries.iter() {
+                    println!("{}", entry.bibtex);
+                }
+            }
+            Some(i) => {
+                // gen for one entry
+                let output = self.entries.get(i).map_or("No such id", |e| &e.bibtex);
+                println!("{}", output);
+            }
         }
     }
 

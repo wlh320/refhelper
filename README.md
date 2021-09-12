@@ -21,11 +21,11 @@ cargo build --release
 `Library` - A collection of entries, can be exported to `.bibtex` file
 
 ```
-refhelper 0.1.0
+refhelper 0.1.1
 A CLI tool to manage paper references
 
 USAGE:
-    refhelper <SUBCOMMAND>
+    refhelper [SUBCOMMAND]
 
 FLAGS:
     -h, --help       Prints help information
@@ -40,7 +40,7 @@ SUBCOMMANDS:
 interactive CLI:
 
 ```
-refhelper 0.1.0
+refhelper 0.1.1
 
 USAGE:
     Type command in an interactive shell
@@ -48,13 +48,14 @@ USAGE:
 SUBCOMMANDS:
     open         Open a library
     list         List entries of current library
+    search       Search entries with some pattern
     add          Add an entry to current library
     add_batch    Add a batch of entries to current library (from a txt file)
     load         Load a batch of entries to current library (from a bibtex file)
     del          Delete an entry in current library
     link         Create link from entry to a pdf file
     view         View chosen pdf file in pdfviewer
-    gen          Generate bibtex file of current library
+    gen          Generate bibtex file of one entry or entire library
     quit         Quit from interactive CLI
     help         Prints this message or the help of the given subcommand(s)
 ```
@@ -64,5 +65,7 @@ SUBCOMMANDS:
 - [x] rustyline history and file completion
 - [x] add a batch of entries from file
 - [x] run doi2bib concurrently
-- [ ] fuzzy search
-- [ ] open pdf cross-platform support
+- [x] fuzzy search
+- [x] open pdf cross-platform support (linux, windows)
+- [ ] more tests
+- [ ] download and link pdf file automatically when adding entries

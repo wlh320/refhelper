@@ -1,7 +1,7 @@
 use rustyline::completion::{Completer, FilenameCompleter, Pair};
 use rustyline::config::OutputStreamType;
 use rustyline::hint::{Hinter, HistoryHinter};
-use rustyline::{CompletionType, Config, EditMode, Editor, Context};
+use rustyline::{CompletionType, Config, Context, EditMode, Editor};
 use rustyline_derive::{Helper, Highlighter, Validator};
 
 pub use rustyline::error::ReadlineError;
