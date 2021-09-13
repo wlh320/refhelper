@@ -1,6 +1,7 @@
 use biblatex::{self, Bibliography, ChunksExt};
 use futures::{stream, StreamExt};
 use fuzzy_matcher::skim::SkimMatcherV2;
+use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs::File;
@@ -54,7 +55,7 @@ impl Entry {
                 self.bibtex = e.to_bibtex_string();
                 Ok(())
             }
-            None => Err(String::from("Invalid DOI")),
+            None => Err(String::from("Failed to get bibtex from DOI")),
         }
     }
 
@@ -67,7 +68,7 @@ impl Entry {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct Library {
     entries: Vec<Entry>,
 
@@ -76,13 +77,6 @@ pub struct Library {
 }
 
 impl Library {
-    pub fn new() -> Library {
-        Library {
-            path: None,
-            entries: vec![],
-        }
-    }
-
     pub fn from_path(path: PathBuf) -> Result<Library, Box<dyn Error>> {
         let lib = match File::open(&path) {
             Ok(file) => {
@@ -112,11 +106,16 @@ impl Library {
 
     pub fn add_batch(&mut self, mut entries: Vec<Entry>) {
         const CONCURRENT_NUM: usize = 5;
+        let pb = ProgressBar::new(entries.len() as u64);
         let rt = Runtime::new().unwrap();
         let results = rt.block_on(async {
             let tasks = entries.iter_mut().map(|e| e.get_bib());
             stream::iter(tasks)
-                .map(|task| async { task.await })
+                .map(|task| async {
+                    let r = task.await;
+                    pb.inc(1);
+                    r
+                })
                 .buffered(CONCURRENT_NUM)
                 .collect::<Vec<_>>()
                 .await
@@ -125,10 +124,10 @@ impl Library {
         for (entry, result) in entries.into_iter().zip(results.into_iter()) {
             match result {
                 Ok(()) => self.entries.push(entry),
-                Err(e) => println!("{} error: {}", entry.name, e),
+                Err(e) => println!("add '{}' error: {}", entry.name, e),
             }
         }
-        println!("Read {} entries from file", self.entries.len() - old_len);
+        println!("Add {} entries from file", self.entries.len() - old_len);
     }
 
     pub fn del(&mut self, id: usize) {
@@ -181,10 +180,7 @@ impl Library {
             .entries
             .iter()
             .enumerate()
-            .filter_map(|(id, e)| match matcher.score(&e.bibtex, pat) {
-                None => None,
-                Some(s) => Some((s, id, e)),
-            })
+            .filter_map(|(id, e)| matcher.score(&e.bibtex, pat).map(|s| (s, id, e)))
             .collect::<Vec<_>>();
         matched.sort_by_key(|t| -t.0);
         let mut to_print = matched.into_iter().map(|(_, i, e)| (i, e));

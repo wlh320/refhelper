@@ -99,7 +99,7 @@ pub fn loop_run(libpath: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
     // check if library is specified
     let mut lib = match libpath {
         Some(path) => Library::from_path(path)?,
-        None => Library::new(),
+        None => Library::default(),
     };
     let mut rl = rustyline::my_editor();
     let prompt = ">> ";
@@ -125,7 +125,7 @@ pub fn loop_run(libpath: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
 }
 
 fn execute_command(lib: &mut Library, command: Command) {
-    if let None = lib.path {
+    if lib.path.is_none() {
         println!("No library is open");
         return;
     }

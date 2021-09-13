@@ -2,11 +2,10 @@ use biblatex::{self, Bibliography, ChunksExt};
 use comfy_table::{ContentArrangement, Table};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use reqwest;
+use indicatif::ProgressIterator;
 use std::error::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{self, Stdio};
-use std::vec;
 
 use crate::Entry;
 
@@ -25,8 +24,8 @@ pub async fn doi2bib(doi: &str) -> Result<String, Box<dyn Error>> {
 
 pub fn read_doi_file(path: PathBuf) -> Vec<Entry> {
     // file format example:
-    // name1 doi1
-    // name2 doi2
+    // name1 doi1 [pdf filepath]
+    // name2 doi2 [pdf filepath]
     // ...   ...
     let mut entries: Vec<Entry> = Vec::new();
     let content = match std::fs::read_to_string(path) {
@@ -38,11 +37,15 @@ pub fn read_doi_file(path: PathBuf) -> Vec<Entry> {
     };
     for (lineno, line) in content.lines().enumerate() {
         let words: Vec<&str> = line.trim().split_whitespace().collect();
-        if words.len() != 2 {
-            println!("error read doi file at line {}", lineno);
-            continue;
-        }
-        entries.push(Entry::new(words[0], words[1]));
+        match words.len() {
+            2 => entries.push(Entry::new(words[0], words[1])),
+            3 => {
+                let mut entry = Entry::new(words[0], words[1]);
+                entry.link(PathBuf::from(words[2]));
+                entries.push(entry);
+            }
+            _ => println!("error read doi file at line {}", lineno),
+        };
     }
     entries
 }
@@ -57,22 +60,19 @@ pub fn read_bibtex_file(path: PathBuf) -> Vec<Entry> {
         }
     };
     let bibs = Bibliography::parse(&content).unwrap();
-    for e in bibs {
+    for e in bibs.into_iter().progress() {
         let name = &e.key;
-        let doi = &e.doi().unwrap_or(String::from(""));
+        let doi = &e.doi().unwrap_or_default();
         // parse
-        let mut entry = Entry::new(&name, &doi);
+        let mut entry = Entry::new(name, doi);
         entry.bibtex = e.to_bibtex_string();
-        entry.title = match e.title() {
-            None => String::new(),
-            Some(t) => t.format_sentence(),
-        };
+        entry.title = e.title().map_or("".to_owned(), |t| t.format_sentence());
         entries.push(entry);
     }
     entries
 }
 
-pub fn view_pdf_file(path: &PathBuf) -> Result<(), Box<dyn Error>> {
+pub fn view_pdf_file(path: &Path) -> Result<(), Box<dyn Error>> {
     #[cfg(target_os = "linux")]
     process::Command::new("xdg-open")
         .arg(path.as_os_str())
@@ -114,7 +114,7 @@ pub trait Matcher {
 }
 impl Matcher for SkimMatcherV2 {
     fn score(&self, choice: &str, pattern: &str) -> Option<i64> {
-        return self.fuzzy_match(choice, pattern);
+        self.fuzzy_match(choice, pattern)
     }
 }
 pub struct StrictMatcher;
