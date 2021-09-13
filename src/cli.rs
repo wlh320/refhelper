@@ -43,7 +43,7 @@ pub enum Command {
         fuzzy: bool,
     },
 
-    /// Add an entry to current library
+    /// Add an entry to current library using DOI or arXiv id
     #[structopt(name = "add")]
     #[structopt(settings(CLI_CLAP_SETTINGS))]
     Add { name: String, doi: String },

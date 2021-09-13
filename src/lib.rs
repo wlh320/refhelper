@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use tokio::runtime::Runtime;
 
 pub mod cli;
+mod downloader;
 mod rustyline;
 mod utils;
 
@@ -26,7 +27,7 @@ impl Entry {
     pub fn new(name: &str, doi: &str) -> Entry {
         Entry {
             name: String::from(name),
-            doi: String::from(doi),
+            doi: String::from(doi), // if arxiv paper, it is arxiv id
             bibtex: String::from(""),
             path: None,
             title: String::from(""),
@@ -39,8 +40,13 @@ impl Entry {
     }
 
     pub async fn get_bib(&mut self) -> Result<(), Box<dyn Error>> {
-        let bib = utils::doi2bib(&self.doi).await?;
-        self.parse_bibtex(bib)?;
+        if self.doi.starts_with("10.") {
+            let bib = downloader::DOIDownloader::get_bibtex(&self.doi).await?;
+            self.parse_bibtex(bib)?;
+        } else {
+            let bib = downloader::ArxivDownloader::get_bibtex(&self.doi).await?;
+            self.parse_bibtex(bib)?;
+        }
         Ok(())
     }
 
@@ -50,12 +56,15 @@ impl Entry {
         match bibs.iter_mut().next() {
             Some(e) => {
                 // update entry cite key to entry.name
+                if e.key.is_empty() {
+                    return Err(String::from("Failed to get bibtex from DOI/arXiv"));
+                }
                 e.key = self.name.clone();
                 self.title = e.title().map_or("".to_owned(), |t| t.format_sentence());
                 self.bibtex = e.to_bibtex_string();
                 Ok(())
             }
-            None => Err(String::from("Failed to get bibtex from DOI")),
+            None => Err(String::from("Failed to get bibtex from DOI/arXiv")),
         }
     }
 
@@ -95,8 +104,8 @@ impl Library {
         Ok(lib)
     }
 
-    pub fn add(&mut self, name: &str, doi: &str) {
-        let mut new_entry = Entry::new(name, doi);
+    pub fn add(&mut self, name: &str, id: &str) {
+        let mut new_entry = Entry::new(name, id);
         let rt = Runtime::new().unwrap();
         match rt.block_on(new_entry.get_bib()) {
             Ok(()) => self.entries.push(new_entry),
@@ -120,6 +129,7 @@ impl Library {
                 .collect::<Vec<_>>()
                 .await
         });
+        pb.finish_with_message("done");
         let old_len = self.entries.len();
         for (entry, result) in entries.into_iter().zip(results.into_iter()) {
             match result {

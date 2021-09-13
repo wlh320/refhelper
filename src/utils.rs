@@ -9,19 +9,6 @@ use std::process::{self, Stdio};
 
 use crate::Entry;
 
-pub async fn doi2bib(doi: &str) -> Result<String, Box<dyn Error>> {
-    let url = format!("https://doi.org/{}", doi);
-    let client = reqwest::Client::new();
-    let body = client
-        .get(url)
-        .header("Accept", "application/x-bibtex; charset=utf-8")
-        .send()
-        .await?
-        .text()
-        .await?;
-    Ok(body)
-}
-
 pub fn read_doi_file(path: PathBuf) -> Vec<Entry> {
     // file format example:
     // name1 doi1 [pdf filepath]
