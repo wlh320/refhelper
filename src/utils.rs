@@ -49,11 +49,12 @@ pub fn read_bibtex_file(path: PathBuf) -> Vec<Entry> {
     let bibs = Bibliography::parse(&content).unwrap();
     for e in bibs.into_iter().progress() {
         let name = &e.key;
-        let doi = &e.doi().unwrap_or_default();
+        let arxiv_id = e.eprint().unwrap_or_default();
+        let doi = &e.doi().unwrap_or(arxiv_id);
         // parse
         let mut entry = Entry::new(name, doi);
         entry.bibtex = e.to_bibtex_string();
-        entry.title = e.title().map_or("".to_owned(), |t| t.format_sentence());
+        entry.title = e.title().unwrap_or_default().format_sentence();
         entries.push(entry);
     }
     entries

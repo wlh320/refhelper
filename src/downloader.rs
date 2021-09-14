@@ -3,16 +3,30 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use scraper::{Html, Selector};
 use std::{error::Error, fs::File, io::Write, path::PathBuf};
 
+fn set_pb_style(pb: &ProgressBar) {
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] [{bar:40}] {bytes:>7}/{total_bytes:7} {msg}")
+            .progress_chars("##-"),
+    );
+}
+
+fn set_pb_err(pb: &ProgressBar, msg: String) {
+    pb.set_style(ProgressStyle::default_bar().template("[{elapsed_precise}] {msg}"));
+    pb.finish();
+    pb.set_message(msg);
+}
+
 pub struct Downloader;
 
 impl Downloader {
     pub async fn get_pdf(id: &str, path: PathBuf, pb: &ProgressBar) -> Result<(), Box<dyn Error>> {
-        if id.starts_with("10.") {
-            pb.set_length(0);
-            pb.set_message("not impl skip");
-            pb.finish();
+        if id.starts_with("10.") || id.is_empty() {
+            set_pb_err(pb, format!("download '{}' error: Not implemented", id));
         } else {
-            ArxivDownloader::get_pdf(id, path, pb).await?;
+            if let Err(e) = ArxivDownloader::get_pdf(id, path, pb).await {
+                set_pb_err(pb, format!("download '{}' error: {}", id, e));
+            }
         }
         Ok(())
     }
@@ -100,14 +114,6 @@ impl DOIDownloader {
     }
 }
 
-fn set_pb_style(pb: &ProgressBar) {
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{msg:14} [{elapsed_precise}] [{bar:40}] {bytes:>7}/{total_bytes:7}")
-            .progress_chars("##-"),
-    );
-}
-
 pub async fn download_pdfs(ids: Vec<&str>, path: PathBuf) -> Result<(), Box<dyn Error>> {
     const CONCURRENT_NUM: usize = 5;
     let m = MultiProgress::new();
@@ -115,11 +121,11 @@ pub async fn download_pdfs(ids: Vec<&str>, path: PathBuf) -> Result<(), Box<dyn 
     total_pb.set_message("downloading");
     total_pb.set_style(
         ProgressStyle::default_bar()
-            .template("{msg:14} [{elapsed_precise}] [{bar:40}] {pos:>7}/{len:7}")
+            .template("[{elapsed_precise}] [{bar:40}] {pos:>7}/{len:7} {msg}")
             .progress_chars("##-"),
     );
     let pbs: Vec<_> = (0..ids.len())
-        .map(|i| m.insert(i, ProgressBar::new(1)))
+        .map(|i| m.insert(i, ProgressBar::new(0)))
         .collect();
     let tasks = ids.iter().enumerate().map(|(i, id)| {
         let mut p = path.clone();
