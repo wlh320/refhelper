@@ -51,6 +51,7 @@ SUBCOMMANDS:
     search       Search entries with some pattern
     add          Add an entry to current library using DOI or arXiv id
     add_batch    Add a batch of entries to current library (from a txt file)
+    download     Download arXiv pdf files for all unlinked entries
     load         Load a batch of entries to current library (from a bibtex file)
     del          Delete an entry in current library
     link         Create link from entry to a pdf file
@@ -58,7 +59,6 @@ SUBCOMMANDS:
     gen          Generate bibtex file of one entry or entire library
     quit         Quit from interactive CLI
     help         Prints this message or the help of the given subcommand(s)
-
 ```
 
 example:
@@ -104,6 +104,8 @@ Current library: test.json
 
 ```
 
+type `help [subcommand]` for more help
+
 ## TODO
 
 - [x] rustyline history and file completion
@@ -112,6 +114,8 @@ Current library: test.json
 - [x] fuzzy search
 - [x] open pdf cross-platform support (linux, windows)
 - [x] add support for arXiv id
-- [ ] more tests
 - [ ] download and link pdf file automatically when adding entries
+    - [x] arXiv
+    - [ ] DOI
+- [ ] more tests
 - [ ] proxy argument

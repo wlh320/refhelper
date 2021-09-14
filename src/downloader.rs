@@ -1,6 +1,22 @@
+use futures::{stream, StreamExt};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use scraper::{Html, Selector};
-use std::{error::Error, path::Path};
+use std::{error::Error, fs::File, io::Write, path::PathBuf};
 
+pub struct Downloader;
+
+impl Downloader {
+    pub async fn get_pdf(id: &str, path: PathBuf, pb: &ProgressBar) -> Result<(), Box<dyn Error>> {
+        if id.starts_with("10.") {
+            pb.set_length(0);
+            pb.set_message("not impl skip");
+            pb.finish();
+        } else {
+            ArxivDownloader::get_pdf(id, path, pb).await?;
+        }
+        Ok(())
+    }
+}
 pub struct ArxivDownloader;
 
 impl ArxivDownloader {
@@ -39,8 +55,31 @@ impl ArxivDownloader {
         }
     }
 
-    pub async fn _get_pdf(id: &str, _path: &Path) -> Result<(), Box<dyn Error>> {
-        let _url = format!("https://arxiv.org/pdf/{}", id);
+    pub async fn get_pdf(id: &str, path: PathBuf, pb: &ProgressBar) -> Result<(), Box<dyn Error>> {
+        let url = format!("https://arxiv.org/pdf/{}", id);
+        let client = reqwest::Client::builder()
+            .user_agent("hyper/0.5.2".to_owned())
+            .build()?;
+        let res = client
+            .get(url)
+            .header("Accept", "text/bibliography; style=bibtex")
+            .send()
+            .await?;
+
+        let total_size = res.content_length().ok_or("Failed to get file length")?;
+        pb.set_length(total_size);
+        pb.set_message(format!("{}.pdf", id));
+
+        let mut file = File::create(path)?;
+        let mut downloaded: usize = 0;
+        let mut stream = res.bytes_stream();
+        while let Some(item) = stream.next().await {
+            let chunk = item?;
+            let len = file.write(&chunk)?;
+            downloaded += len;
+            pb.set_position(downloaded as u64);
+        }
+        pb.finish();
         Ok(())
     }
 }
@@ -59,10 +98,49 @@ impl DOIDownloader {
             .await?;
         Ok(body)
     }
+}
 
-    // async fn get_pdf(id: &str, path: &Path) -> Result<(), Box<dyn Error>> {
-    //     Ok(())
-    // }
+fn set_pb_style(pb: &ProgressBar) {
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{msg:14} [{elapsed_precise}] [{bar:40}] {bytes:>7}/{total_bytes:7}")
+            .progress_chars("##-"),
+    );
+}
+
+pub async fn download_pdfs(ids: Vec<&str>, path: PathBuf) -> Result<(), Box<dyn Error>> {
+    const CONCURRENT_NUM: usize = 5;
+    let m = MultiProgress::new();
+    let total_pb = m.add(ProgressBar::new(ids.len() as u64));
+    total_pb.set_message("downloading");
+    total_pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{msg:14} [{elapsed_precise}] [{bar:40}] {pos:>7}/{len:7}")
+            .progress_chars("##-"),
+    );
+    let pbs: Vec<_> = (0..ids.len())
+        .map(|i| m.insert(i, ProgressBar::new(1)))
+        .collect();
+    let tasks = ids.iter().enumerate().map(|(i, id)| {
+        let mut p = path.clone();
+        p.push(format!("{}.pdf", id));
+        set_pb_style(&pbs[i]);
+        Downloader::get_pdf(id, p, &pbs[i])
+    });
+
+    let handle_m = tokio::task::spawn_blocking(move || m.join().unwrap());
+    stream::iter(tasks)
+        .map(|task| async {
+            let r = task.await;
+            total_pb.inc(1);
+            r
+        })
+        .buffered(CONCURRENT_NUM)
+        .collect::<Vec<_>>()
+        .await;
+    total_pb.finish_with_message("done");
+    handle_m.await?;
+    Ok(())
 }
 
 #[cfg(test)]

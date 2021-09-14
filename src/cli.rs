@@ -56,6 +56,14 @@ pub enum Command {
         path: PathBuf,
     },
 
+    /// Download arXiv pdf files for all unlinked entries
+    #[structopt(name = "download")]
+    #[structopt(settings(CLI_CLAP_SETTINGS))]
+    Download {
+        #[structopt(parse(from_os_str))]
+        folder: Option<PathBuf>,
+    },
+
     /// Load a batch of entries to current library (from a bibtex file)
     #[structopt(name = "load")]
     #[structopt(settings(CLI_CLAP_SETTINGS))]
@@ -139,6 +147,7 @@ fn execute_command(lib: &mut Library, command: Command) {
         Command::Link { id, path } => lib.link(id, path),
         Command::View { id } => lib.view(id),
         Command::Gen { id } => lib.gen_bibtex(id),
+        Command::Download { folder } => lib.download(folder),
         _ => {}
     };
 }

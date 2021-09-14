@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use tokio::runtime::Runtime;
 
 pub mod cli;
-mod downloader;
+pub mod downloader;
 mod rustyline;
 mod utils;
 
@@ -224,5 +224,32 @@ impl Library {
         let len = entries.len();
         self.entries.extend(entries.into_iter());
         println!("load {} entries from file", len);
+    }
+
+    pub fn download(&mut self, folder: Option<PathBuf>) {
+        let path = match folder {
+            Some(p) => p,
+            None => self.path.clone().unwrap().parent().unwrap().to_path_buf(),
+        };
+        let ids: Vec<_> = self
+            .entries
+            .iter()
+            .filter(|e| e.path.is_none())
+            .map(|e| &e.doi[..])
+            .collect();
+        let rt = Runtime::new().unwrap();
+        if let Err(e) = rt.block_on(downloader::download_pdfs(ids, path.clone())) {
+            println!("{}", e);
+        }
+        self.entries
+            .iter_mut()
+            .filter(|e| e.path.is_none())
+            .for_each(|e| {
+                let mut file = path.clone();
+                file.push(format!("{}.pdf", e.doi));
+                if file.exists() {
+                    e.link(file);
+                }
+            });
     }
 }
